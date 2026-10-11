@@ -5,13 +5,12 @@ import * as vscode from "vscode";
 import * as zlib from "zlib";
 import { CONFIG_SECTION } from "./config";
 import { DashboardSetup } from "./dashboardSetup";
+import { ExecutionEventsBatch, ExecutionEventsHub, RobotEvent } from "./executionEvents";
 import { LanguageClientsManager } from "./languageclientsmanger";
 
 const VIEW_TYPE = "robotcode.dashboardViewer";
 // robotdashboard --embed puts this on every script tag; the page runs under a CSP with a fresh nonce
 const NONCE_PLACEHOLDER = "__ROBOTDASHBOARD_NONCE__";
-
-type RobotEvent = { type: string; [key: string]: unknown };
 
 type PageMessage =
   | { type: "ready" }
@@ -26,9 +25,10 @@ const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
 type RobotExitedBody = { outputFile?: string; logFile?: string; reportFile?: string };
 
-// Shows robotdashboard (history plus its Live page) in a webview and feeds the Live page with the
-// `robotEvents` that robotcode's debugger forwards from robotframework-events. Opt-in: events only arrive
-// when the dashboard is turned on (see DashboardSetup), and only runs that sent events go to the history.
+// Shows robotdashboard (history plus its Live page) in a webview and feeds the Live page with the execution
+// events of runs started from RobotCode and of runs started elsewhere (see ExecutionEventsHub). Opt-in: events
+// only arrive when the dashboard is turned on (see DashboardSetup), and only runs that sent events go to the
+// history.
 // The page is generated once with `robotcode dashboard generate --embed`; it asks for its data, which
 // `robotcode dashboard data` reads from the database, so a new run only reloads the page.
 export class DashboardViewerManager implements vscode.Disposable {
@@ -47,22 +47,21 @@ export class DashboardViewerManager implements vscode.Disposable {
     private readonly setup: DashboardSetup,
     private readonly languageClientsManager: LanguageClientsManager,
     private readonly outputChannel: vscode.OutputChannel,
+    events: ExecutionEventsHub,
   ) {
     this._disposables = vscode.Disposable.from(
       vscode.commands.registerCommand("robotcode.openRobotDashboard", () =>
         this.openOnRequest(vscode.workspace.workspaceFolders?.[0]),
       ),
       this.createSidebarView(),
+      events.onDidReceiveEvents((batch) => this.onRobotEvents(batch)),
+      // a run started elsewhere goes to the history with the result files it reported
+      events.onDidEndRun((run) => {
+        if (run.external && run.completed) void this.addExternalRunToHistory(run.folder);
+      }),
       vscode.debug.onDidReceiveDebugSessionCustomEvent(async (event) => {
-        if (event.session.configuration.type !== "robotcode") return;
-        switch (event.event) {
-          case "robotEvents":
-            await this.onRobotEvents(event.session, (event.body as { events?: RobotEvent[] }).events ?? []);
-            break;
-          case "robotExited":
-            await this.addToHistory(event.session, event.body as RobotExitedBody);
-            break;
-        }
+        if (event.session.configuration.type !== "robotcode" || event.event !== "robotExited") return;
+        await this.addToHistory(event.session, event.body as RobotExitedBody);
       }),
     );
   }
@@ -89,16 +88,17 @@ export class DashboardViewerManager implements vscode.Disposable {
     return vscode.workspace.getConfiguration(CONFIG_SECTION, this._folder);
   }
 
-  private async onRobotEvents(session: vscode.DebugSession, events: RobotEvent[]): Promise<void> {
+  private async onRobotEvents(batch: ExecutionEventsBatch): Promise<void> {
+    const events = batch.events;
     if (events.length === 0) return;
-    this._eventSessions.add(session.id);
+    if (!batch.external) this._eventSessions.add(batch.key);
     if (events.some((e) => e.type === "run.started")) this._events = [];
     this._events.push(...events);
 
     if (this._panel) {
       void this._panel.webview.postMessage({ type: "events", events });
     } else if (this.config.get<boolean>("dashboard.openOnRun", true)) {
-      await this.open(session.workspaceFolder ?? vscode.workspace.workspaceFolders?.[0], true);
+      await this.open(batch.folder ?? vscode.workspace.workspaceFolders?.[0], true);
     }
   }
 
@@ -318,8 +318,22 @@ export class DashboardViewerManager implements vscode.Disposable {
   private async addToHistory(session: vscode.DebugSession, files: RobotExitedBody): Promise<void> {
     // only runs of an opted-in dashboard send events
     if (!this._eventSessions.delete(session.id)) return;
+    await this.addRunToHistory(session.workspaceFolder, files);
+  }
+
+  // the result files come from the resultfile.created events of the run
+  private async addExternalRunToHistory(folder: vscode.WorkspaceFolder | undefined): Promise<void> {
+    const file = (kind: string) =>
+      this._events.find((e) => e.type === "resultfile.created" && e.kind === kind)?.path as string | undefined;
+    await this.addRunToHistory(folder, {
+      outputFile: file("OUTPUT"),
+      logFile: file("LOG"),
+      reportFile: file("REPORT"),
+    });
+  }
+
+  private async addRunToHistory(folder: vscode.WorkspaceFolder | undefined, files: RobotExitedBody): Promise<void> {
     if (!this.config.get<boolean>("dashboard.addRunsToHistory", true)) return;
-    const folder = session.workspaceFolder;
     const existing = (file: string | undefined): string | undefined => {
       if (!file) return undefined;
       const full = path.isAbsolute(file) || !folder ? file : path.join(folder.uri.fsPath, file);

@@ -11,6 +11,7 @@ import { NotebookManager } from "./notebook";
 import { DocumentationViewerManager } from "./documentationViewer";
 import { DashboardSetup } from "./dashboardSetup";
 import { LiveExecutionManager } from "./liveExecution";
+import { ExecutionEventsHub } from "./executionEvents";
 import { DashboardViewerManager } from "./dashboardViewer";
 import { createExtendMarkdownIt } from "./markdownHighlighting";
 import path from "path";
@@ -101,6 +102,7 @@ export async function activateAsync(context: vscode.ExtensionContext): Promise<R
 
   const debugManager = new DebugManager(context, pythonManager, languageClientManger, outputChannel);
   const dashboardSetup = new DashboardSetup(context, pythonManager, outputChannel);
+  const executionEvents = new ExecutionEventsHub(dashboardSetup);
 
   const testControllerManger = new TestControllerManager(context, languageClientManger, debugManager, outputChannel);
 
@@ -122,8 +124,9 @@ export async function activateAsync(context: vscode.ExtensionContext): Promise<R
     new NotebookManager(context, pythonManager, languageClientManger, outputChannel),
     new DocumentationViewerManager(context, pythonManager),
     dashboardSetup,
-    new DashboardViewerManager(context, dashboardSetup, languageClientManger, outputChannel),
-    new LiveExecutionManager(context),
+    executionEvents,
+    new DashboardViewerManager(context, dashboardSetup, languageClientManger, outputChannel, executionEvents),
+    new LiveExecutionManager(context, executionEvents),
     vscode.commands.registerCommand("robotcode.showDocumentation", async (url: string) => {
       if (url.indexOf("&theme=%24%7Btheme%7D") > 0) {
         url = url.replace("%24%7Btheme%7D", getDocTheme());

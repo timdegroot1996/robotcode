@@ -757,7 +757,7 @@
           "robotcode.dashboard.enabled": {
             "type": "boolean",
             "default": false,
-            "markdownDescription": "Turns on Robot Dashboard: runs started by RobotCode get the `robotframework-events` listener, show up live on the dashboard's Live page and are kept in its history (`robotframework-dashboard`). Both packages are installed in the project's Python environment; turning this on offers to install them. When off, no listener is added to runs at all. If not set here, `[tool.robotcode-dashboard] enabled` in `robot.toml` decides.",
+            "markdownDescription": "Turns on Robot Dashboard: runs started by RobotCode get the `robotframework-events` listener, show up live on the dashboard's Live page and are kept in its history (`robotframework-dashboard`). Runs started elsewhere (a terminal, a task runner) with `--listener robotframework_events` show up too: RobotCode follows the `events*.jsonl` files they write in the workspace. Both packages are installed in the project's Python environment; turning this on offers to install them. When off, no listener is added to runs at all. If not set here, `[tool.robotcode-dashboard] enabled` in `robot.toml` decides.",
             "scope": "resource"
           },
           "robotcode.dashboard.openOnRun": {
@@ -794,7 +794,7 @@
           "robotcode.liveExecution.highlightKeywords": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Shows a spinner in the gutter of the running keyword line and marks the lines that called it, in the editor while a run started by RobotCode executes. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`), which sends the execution events.",
+            "markdownDescription": "Shows a spinner in the gutter of the running keyword line and marks the lines that called it, in the editor while a run executes (started by RobotCode, or elsewhere with `--listener robotframework_events`). Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`).",
             "scope": "window"
           },
           "robotcode.liveExecution.showResults": {
@@ -806,7 +806,7 @@
           "robotcode.liveExecution.showProgress": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Shows the progress of a run started by RobotCode (tests done, failed) in the status bar. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`), which sends the execution events.",
+            "markdownDescription": "Shows the progress of a run (tests done, failed) in the status bar, for runs started by RobotCode or elsewhere with `--listener robotframework_events`. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`).",
             "scope": "window"
           }
         }

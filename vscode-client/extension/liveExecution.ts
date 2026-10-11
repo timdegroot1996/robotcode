@@ -1,9 +1,10 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { CONFIG_SECTION } from "./config";
+import { ExecutionEventsHub, RobotEvent } from "./executionEvents";
 
-// Live execution in the editor, fed by the `robotEvents` batches that robotcode's debugger forwards from
-// robotframework-events (so only when Robot Dashboard is turned on):
+// Live execution in the editor, fed by the execution events of runs started from RobotCode and of runs
+// started elsewhere (see ExecutionEventsHub; only when Robot Dashboard is turned on):
 // - the running keyword line gets a spinner in the gutter, the lines that called it a ring
 //   (no line background: with fast keywords it flickers, the gutter is clear enough)
 // - every line that ran gets a pass or fail mark that stays until the next run or until the file is edited
@@ -15,8 +16,6 @@ const RESULTS_SETTING = "liveExecution.showResults";
 const PROGRESS_SETTING = "liveExecution.showProgress";
 // how long the result of a finished run stays in the status bar
 const RESULT_VISIBLE_MS = 10000;
-
-type RobotEvent = { type: string; [key: string]: unknown };
 
 type Location = { source: string; lineno: number };
 
@@ -47,7 +46,7 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-// updates one session from one event; returns the location and result of a test or step that ended
+// updates one run from one event; returns the location and result of a test or step that ended
 function applyEvent(state: SessionState, event: RobotEvent): Ended | undefined {
   const id = str(event.id);
   switch (event.type) {
@@ -118,7 +117,7 @@ export class LiveExecutionManager implements vscode.Disposable {
   private readonly _failed: vscode.TextEditorDecorationType;
   private _hideTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(context: vscode.ExtensionContext) {
+  constructor(context: vscode.ExtensionContext, events: ExecutionEventsHub) {
     const icon = (name: string) => vscode.Uri.joinPath(context.extensionUri, "images", "live", `${name}.svg`);
 
     this._statusBar = vscode.window.createStatusBarItem("robotcode.liveExecution", vscode.StatusBarAlignment.Left, 0);
@@ -151,12 +150,9 @@ export class LiveExecutionManager implements vscode.Disposable {
       this._caller,
       this._passed,
       this._failed,
-      vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
-        if (event.session.configuration.type !== "robotcode" || event.event !== "robotEvents") return;
-        this.onEvents(event.session, (event.body as { events?: RobotEvent[] }).events ?? []);
-      }),
-      vscode.debug.onDidTerminateDebugSession((session) => {
-        const state = this._sessions.get(session.id);
+      events.onDidReceiveEvents((batch) => this.onEvents(batch.key, batch.events)),
+      events.onDidEndRun((run) => {
+        const state = this._sessions.get(run.key);
         if (state === undefined) return;
         // a run that stopped without run.ended (stopped by the user, crashed) leaves no running lines behind
         state.frames.length = 0;
@@ -185,16 +181,16 @@ export class LiveExecutionManager implements vscode.Disposable {
     this._disposables.dispose();
   }
 
-  private onEvents(session: vscode.DebugSession, events: RobotEvent[]): void {
+  private onEvents(key: string, events: RobotEvent[]): void {
     if (events.length === 0) return;
     for (const event of events) {
       if (event.type === "run.started") {
         // a new run replaces the results of runs that already finished
         for (const [id, state] of this._sessions) if (state.ended) this._sessions.delete(id);
         if (![...this._sessions.values()].some((s) => !s.ended)) this._results.clear();
-        this._sessions.set(session.id, new SessionState());
+        this._sessions.set(key, new SessionState());
       }
-      const state = this._sessions.get(session.id);
+      const state = this._sessions.get(key);
       const ended = state !== undefined ? applyEvent(state, event) : undefined;
       if (ended !== undefined) this.record(ended);
     }
