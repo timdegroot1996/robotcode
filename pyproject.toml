@@ -59,7 +59,7 @@ analyze = ["robotcode-analyze==2.7.0"]
 dashboard = [
   "robotcode-dashboard==2.7.0",
   "robotframework-dashboard",
-  "robotframework-events>=0.3.0",
+  "robotframework-events>=0.5.0",
 ]
 yaml = ["PyYAML>=5.4"]
 lint = ["robotframework-robocop>=2.0.0"]
@@ -73,7 +73,7 @@ all = [
   "robotcode-analyze==2.7.0",
   "robotcode-dashboard==2.7.0",
   "robotframework-dashboard",
-  "robotframework-events>=0.3.0",
+  "robotframework-events>=0.5.0",
   "robotcode-repl==2.7.0",
   "robotcode-repl-server==2.7.0",
   "PyYAML>=5.4",

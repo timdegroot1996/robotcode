@@ -14,7 +14,7 @@ const ENABLED_SETTING = "dashboard.enabled";
 const INTRODUCTION_STATE = "robotcode.dashboard.introduction"; // "enabled" | "dismissed"
 
 const MIN_ROBOT_FRAMEWORK = "7.0";
-const MIN_EVENTS = "0.3.0";
+const MIN_EVENTS = "0.5.0";
 // decided when this ships; until then any installed robotframework-dashboard is accepted
 const MIN_DASHBOARD: string | undefined = undefined;
 
