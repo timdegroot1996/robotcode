@@ -19,8 +19,7 @@ type PageMessage =
   | { type: "openLog"; path?: string }
   | { type: "replayEvents"; paths?: string[]; name?: string }
   | { type: "dataRequest" }
-  | { type: "resolveFiles"; paths?: string[] }
-  | { type: "openTrace"; path?: string };
+  | { type: "resolveFiles"; paths?: string[] };
 
 // images the Live page may show (screenshots that steps log)
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
@@ -244,9 +243,6 @@ export class DashboardViewerManager implements vscode.Disposable {
       case "resolveFiles":
         this.resolveFiles(message.paths ?? []);
         break;
-      case "openTrace":
-        void this.openTrace(message.path);
-        break;
     }
   }
 
@@ -328,24 +324,6 @@ export class DashboardViewerManager implements vscode.Disposable {
       void this._panel?.webview.postMessage({ type: "replay", events, name: name ?? path.basename(file) });
     } catch (e) {
       void this._panel?.webview.postMessage({ type: "replayError", message: `Could not read ${file}: ${String(e)}` });
-    }
-  }
-
-  // opens a Playwright trace (Browser library) in the trace viewer of the project's Browser library;
-  // only zip files in the archive or a workspace folder
-  private async openTrace(tracePath: string | undefined): Promise<void> {
-    if (!tracePath) return;
-    const file = this.allowedFile(tracePath, [".zip"]);
-    if (!file) {
-      void vscode.window.showWarningMessage(
-        `Robot Dashboard: trace not found: ${tracePath}. Browser library writes it when the browser context closes.`,
-      );
-      return;
-    }
-    if (!(await this.setup.startPython(this._folder, ["-m", "Browser.entry", "show-trace", file]))) {
-      void vscode.window.showWarningMessage(
-        "Robot Dashboard: could not start the trace viewer (`rfbrowser show-trace`) in the project environment.",
-      );
     }
   }
 
@@ -476,8 +454,7 @@ export class DashboardViewerManager implements vscode.Disposable {
       if (logFile) fs.copyFileSync(logFile, path.join(target, "log.html"));
       if (reportFile) fs.copyFileSync(reportFile, path.join(target, "report.html"));
       if (this._events.length > 0) {
-        const events = archiveTraces(this._events, path.join(target, "traces"));
-        const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+        const lines = this._events.map((e) => JSON.stringify(e)).join("\n") + "\n";
         fs.writeFileSync(path.join(target, "events.jsonl.gz"), zlib.gzipSync(lines));
       }
       return path.join(target, "output.xml");
@@ -503,27 +480,6 @@ export class DashboardViewerManager implements vscode.Disposable {
       this.outputChannel.appendLine(`Robot Dashboard: could not prune the archive: ${String(e)}`);
     }
   }
-}
-
-// Browser library logs where New Context writes its Playwright trace; the trace exists once the context closed
-const TRACE_MESSAGE = /(trace file will be saved to:\s*)(\S.*?\.zip)(\s*)$/i;
-
-// copies the Playwright traces of a run into `folder` (Browser library deletes its traces at the start of the
-// next run) and returns the events with the messages pointing at the copies
-function archiveTraces(events: RobotEvent[], folder: string): RobotEvent[] {
-  return events.map((event) => {
-    if (event.type !== "message.logged" || typeof event.text !== "string") return event;
-    const match = TRACE_MESSAGE.exec(event.text);
-    if (!match || !fs.existsSync(match[2])) return event;
-    try {
-      fs.mkdirSync(folder, { recursive: true });
-      const copy = path.join(folder, path.basename(match[2]));
-      fs.copyFileSync(match[2], copy);
-      return { ...event, text: event.text.replace(TRACE_MESSAGE, `$1${copy}$3`) };
-    } catch {
-      return event;
-    }
-  });
 }
 
 // a folder of generated files that must not end up in version control
