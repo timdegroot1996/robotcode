@@ -10,6 +10,7 @@ import { ChatPluginsManager } from "./chatPluginsManager";
 import { NotebookManager } from "./notebook";
 import { DocumentationViewerManager } from "./documentationViewer";
 import { DashboardSetup } from "./dashboardSetup";
+import { LiveExecutionManager } from "./liveExecution";
 import { DashboardViewerManager } from "./dashboardViewer";
 import { createExtendMarkdownIt } from "./markdownHighlighting";
 import path from "path";
@@ -122,6 +123,7 @@ export async function activateAsync(context: vscode.ExtensionContext): Promise<R
     new DocumentationViewerManager(context, pythonManager),
     dashboardSetup,
     new DashboardViewerManager(context, dashboardSetup, languageClientManger, outputChannel),
+    new LiveExecutionManager(context),
     vscode.commands.registerCommand("robotcode.showDocumentation", async (url: string) => {
       if (url.indexOf("&theme=%24%7Btheme%7D") > 0) {
         url = url.replace("%24%7Btheme%7D", getDocTheme());

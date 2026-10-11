@@ -790,6 +790,18 @@
             "minimum": 0,
             "markdownDescription": "Number of runs kept in the Robot Dashboard database and archive folder. Older runs are removed after each run. `0` keeps all runs.",
             "scope": "resource"
+          },
+          "robotcode.liveExecution.highlightKeywords": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Shows a spinner in the gutter of the running keyword line and marks the lines that called it, in the editor while a run started by RobotCode executes. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`), which sends the execution events.",
+            "scope": "window"
+          },
+          "robotcode.liveExecution.showResults": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Marks every line that ran with a pass or fail icon (the failure message is shown by the Test Explorer). The marks stay until the next run or until the file is edited. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`).",
+            "scope": "window"
           }
         }
       },
