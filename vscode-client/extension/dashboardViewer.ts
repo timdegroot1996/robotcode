@@ -26,6 +26,10 @@ const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
 type RobotExitedBody = { outputFile?: string; logFile?: string; reportFile?: string };
 
+// the files a run's HTML messages link to (screenshots) are archived with the run, up to this size per run
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const LINKED_FILE = /<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*(["'])(.*?)\1/gi;
+
 // pabot writes its merged output.xml after the last item; how long to wait for it
 const PABOT_OUTPUT_WAIT_MS = 120000;
 
@@ -454,7 +458,15 @@ export class DashboardViewerManager implements vscode.Disposable {
       if (logFile) fs.copyFileSync(logFile, path.join(target, "log.html"));
       if (reportFile) fs.copyFileSync(reportFile, path.join(target, "report.html"));
       if (this._events.length > 0) {
-        const lines = this._events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+        // log.html links its screenshots relative to itself; the Live page relative to run.started.outputdir
+        const started = this._events.find((e) => e.type === "run.started");
+        const base = logFile
+          ? path.dirname(logFile)
+          : typeof started?.outputdir === "string"
+            ? started.outputdir
+            : path.dirname(outputFile);
+        const events = this.archiveAttachments(this._events, base, target);
+        const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
         fs.writeFileSync(path.join(target, "events.jsonl.gz"), zlib.gzipSync(lines));
       }
       return path.join(target, "output.xml");
@@ -462,6 +474,51 @@ export class DashboardViewerManager implements vscode.Disposable {
       this.outputChannel.appendLine(`Robot Dashboard: could not archive the run: ${String(e)}`);
       return outputFile;
     }
+  }
+
+  // Copies the files that the run's HTML messages link to (screenshots of Browser, SeleniumLibrary and others,
+  // as log.html shows them) into the run's folder at the same relative path, so the archived log.html and a
+  // replay still show them after the next run deleted the originals. Only files inside `base`, at most
+  // MAX_ATTACHMENT_BYTES per run. The archived events point their output directory at the run's folder.
+  private archiveAttachments(events: RobotEvent[], base: string, target: string): RobotEvent[] {
+    const linked = new Set<string>();
+    for (const event of events) {
+      if (event.type !== "message.logged" || !event.html || typeof event.text !== "string") continue;
+      for (const match of event.text.matchAll(LINKED_FILE)) linked.add(match[2].trim());
+    }
+    let total = 0;
+    let skipped = 0;
+    for (const link of linked) {
+      // URLs and data: links stay as they are; a Windows drive letter is not a URL scheme
+      if (!link || (/^[a-z][a-z0-9+.-]*:/i.test(link) && !/^[a-z]:[\\/]/i.test(link))) continue;
+      let source: string;
+      try {
+        source = path.resolve(base, decodeURI(link.split(/[?#]/)[0]));
+      } catch {
+        continue; // malformed escape
+      }
+      const relative = path.relative(base, source);
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+      try {
+        const stat = fs.statSync(source);
+        if (!stat.isFile()) continue;
+        if (total + stat.size > MAX_ATTACHMENT_BYTES) {
+          skipped++;
+          continue;
+        }
+        const copy = path.join(target, relative);
+        fs.mkdirSync(path.dirname(copy), { recursive: true });
+        fs.copyFileSync(source, copy);
+        total += stat.size;
+      } catch {
+        // gone or not readable
+      }
+    }
+    if (skipped > 0)
+      this.outputChannel.appendLine(
+        `Robot Dashboard: ${skipped} linked file(s) not archived: over ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB for the run`,
+      );
+    return events.map((e) => (e.type === "run.started" ? { ...e, outputdir: target } : e));
   }
 
   // keeps the newest `keep` run folders; folder names start with a sortable timestamp
