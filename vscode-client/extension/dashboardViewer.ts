@@ -7,6 +7,7 @@ import { CONFIG_SECTION } from "./config";
 import { DashboardSetup } from "./dashboardSetup";
 import { ExecutionEventsBatch, ExecutionEventsHub, RobotEvent } from "./executionEvents";
 import { LanguageClientsManager } from "./languageclientsmanger";
+import { PabotRun, pabotResultsFolder } from "./pabotRun";
 
 const VIEW_TYPE = "robotcode.dashboardViewer";
 // robotdashboard --embed puts this on every script tag; the page runs under a CSP with a fresh nonce
@@ -25,6 +26,9 @@ const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
 type RobotExitedBody = { outputFile?: string; logFile?: string; reportFile?: string };
 
+// pabot writes its merged output.xml after the last item; how long to wait for it
+const PABOT_OUTPUT_WAIT_MS = 120000;
+
 // Shows robotdashboard (history plus its Live page) in a webview and feeds the Live page with the execution
 // events of runs started from RobotCode and of runs started elsewhere (see ExecutionEventsHub). Opt-in: events
 // only arrive when the dashboard is turned on (see DashboardSetup), and only runs that sent events go to the
@@ -39,6 +43,9 @@ export class DashboardViewerManager implements vscode.Disposable {
   private _events: RobotEvent[] = [];
   // debug sessions that sent events: their runs go to the history
   private readonly _eventSessions = new Set<string>();
+  // the pabot run whose items arrive now, and the event streams of its items
+  private _pabot: PabotRun | undefined;
+  private readonly _pabotItems = new Map<string, PabotRun>();
   private _shellReady = false;
   private _generating: Promise<void> = Promise.resolve();
 
@@ -57,6 +64,16 @@ export class DashboardViewerManager implements vscode.Disposable {
       events.onDidReceiveEvents((batch) => this.onRobotEvents(batch)),
       // a run started elsewhere goes to the history with the result files it reported
       events.onDidEndRun((run) => {
+        const pabot = this._pabotItems.get(run.key);
+        if (pabot !== undefined) {
+          // a pabot item: the run goes to the history once all items ended
+          this._pabotItems.delete(run.key);
+          if (!run.completed) {
+            pabot.stop(run.key);
+            void this.endPabotRun(pabot, run.folder);
+          }
+          return;
+        }
         if (run.external && run.completed) void this.addExternalRunToHistory(run.folder);
       }),
       vscode.debug.onDidReceiveDebugSessionCustomEvent(async (event) => {
@@ -89,16 +106,75 @@ export class DashboardViewerManager implements vscode.Disposable {
   }
 
   private async onRobotEvents(batch: ExecutionEventsBatch): Promise<void> {
-    const events = batch.events;
-    if (events.length === 0) return;
+    if (batch.events.length === 0) return;
     if (!batch.external) this._eventSessions.add(batch.key);
+    const pabot = this.pabotRunOf(batch);
+    if (pabot === undefined) {
+      await this.showEvents(batch.events, batch.folder);
+      return;
+    }
+    await this.showEvents(pabot.add(batch.key, batch.events), batch.folder);
+    await this.endPabotRun(pabot, batch.folder);
+  }
+
+  // the pabot run that a stream belongs to; a stream of an item opens a new run when pabot started again
+  private pabotRunOf(batch: ExecutionEventsBatch): PabotRun | undefined {
+    const known = this._pabotItems.get(batch.key);
+    if (known !== undefined) return known;
+    const start = batch.events.find((e) => e.type === "run.started");
+    const item = start?.pabot as { index?: number } | undefined;
+    if (start === undefined || item === undefined || typeof start.outputdir !== "string") return undefined;
+    const folder = pabotResultsFolder(start.outputdir);
+    if (folder === undefined) return undefined;
+    let run = this._pabot;
+    if (run === undefined || run.folder !== folder || run.ended || run.hasItem(item.index ?? -1)) {
+      // a previous pabot run that never completed (stopped) still gets its end
+      if (run !== undefined && !run.ended) void this.showEvents(run.finish(), batch.folder);
+      run = this._pabot = new PabotRun(folder);
+    }
+    this._pabotItems.set(batch.key, run);
+    return run;
+  }
+
+  // once every item ended: closes the merged run and adds pabot's merged output.xml to the history
+  private async endPabotRun(pabot: PabotRun, folder: vscode.WorkspaceFolder | undefined): Promise<void> {
+    if (pabot.ended || !pabot.complete) return;
+    await this.showEvents(pabot.finish(), folder);
+    const outputFile = path.join(pabot.outputDir, "output.xml");
+    const stable = async (): Promise<boolean> => {
+      for (let waited = 0; waited < PABOT_OUTPUT_WAIT_MS; waited += 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        try {
+          const stat = fs.statSync(outputFile);
+          // written by this run (not an older run's file) and no longer growing
+          if (stat.mtimeMs >= pabot.startT * 1000 && Date.now() - stat.mtimeMs > 2000) return true;
+        } catch {
+          // not there yet
+        }
+      }
+      return false;
+    };
+    if (!(await stable())) return;
+    const sibling = (name: string) => {
+      const file = path.join(pabot.outputDir, name);
+      return fs.existsSync(file) ? file : undefined;
+    };
+    await this.addRunToHistory(folder, {
+      outputFile,
+      logFile: sibling("log.html"),
+      reportFile: sibling("report.html"),
+    });
+  }
+
+  private async showEvents(events: RobotEvent[], folder: vscode.WorkspaceFolder | undefined): Promise<void> {
+    if (events.length === 0) return;
     if (events.some((e) => e.type === "run.started")) this._events = [];
     this._events.push(...events);
 
     if (this._panel) {
       void this._panel.webview.postMessage({ type: "events", events });
     } else if (this.config.get<boolean>("dashboard.openOnRun", true)) {
-      await this.open(batch.folder ?? vscode.workspace.workspaceFolders?.[0], true);
+      await this.open(folder ?? vscode.workspace.workspaceFolders?.[0], true);
     }
   }
 
