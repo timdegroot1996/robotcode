@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robotcode-dashboard"
+description = 'RobotCode plugin for the Robot Dashboard and execution events of Robot Framework'
+readme = { "file" = "README.md", "content-type" = "text/markdown" }
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+keywords = []
+authors = [{ name = "Daniel Biehl", email = "dbiehl@live.de" }]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+  "Operating System :: OS Independent",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+  "Framework :: Robot Framework",
+  "Framework :: Robot Framework :: Tool",
+]
+dependencies = [
+  "robotframework>=5.0.0",
+  "robotcode-plugin==2.7.0",
+  "robotcode-robot==2.7.0",
+  "robotcode==2.7.0",
+]
+dynamic = ["version"]
+
+[project.entry-points.robotcode]
+dashboard = "robotcode.dashboard.hooks"
+
+[project.urls]
+Homepage = "https://robotcode.io"
+Donate = "https://opencollective.com/robotcode"
+Documentation = "https://github.com/robotcodedev/robotcode#readme"
+Changelog = "https://github.com/robotcodedev/robotcode/blob/main/CHANGELOG.md"
+Issues = "https://github.com/robotcodedev/robotcode/issues"
+Source = "https://github.com/robotcodedev/robotcode"
+
+[tool.hatch.version]
+path = "src/robotcode/dashboard/__version__.py"
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/robotcode"]
+sources = ["src"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
+[tool.hatch.envs.build]
+detached = true
+python = "310"

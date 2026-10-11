@@ -56,6 +56,11 @@ debugger = ["robotcode-debugger==2.7.0"]
 languageserver = ["robotcode-language-server==2.7.0"]
 runner = ["robotcode-runner==2.7.0"]
 analyze = ["robotcode-analyze==2.7.0"]
+dashboard = [
+  "robotcode-dashboard==2.7.0",
+  "robotframework-dashboard",
+  "robotframework-events>=0.3.0",
+]
 yaml = ["PyYAML>=5.4"]
 lint = ["robotframework-robocop>=2.0.0"]
 rest = ["docutils"]
@@ -66,6 +71,9 @@ all = [
   "robotcode-language-server==2.7.0",
   "robotcode-runner==2.7.0",
   "robotcode-analyze==2.7.0",
+  "robotcode-dashboard==2.7.0",
+  "robotframework-dashboard",
+  "robotframework-events>=0.3.0",
   "robotcode-repl==2.7.0",
   "robotcode-repl-server==2.7.0",
   "PyYAML>=5.4",
@@ -78,6 +86,7 @@ debugger = ["robotcode-debugger"]
 languageserver = ["robotcode-language-server"]
 runner = ["robotcode-runner"]
 analyze = ["robotcode-analyze"]
+dashboard = ["robotcode-dashboard"]
 replserver = ["robotcode-repl-server"]
 repl = ["robotcode-repl"]
 yaml = ["PyYAML>=5.4"]
@@ -89,6 +98,7 @@ all = [
   { "include-group" = "languageserver" },
   { "include-group" = "runner" },
   { "include-group" = "analyze" },
+  { "include-group" = "dashboard" },
   { "include-group" = "repl" },
   { "include-group" = "replserver" },
   { "include-group" = "yaml" },
@@ -122,6 +132,7 @@ robotcode-debugger = { workspace = true }
 robotcode-language-server = { workspace = true }
 robotcode-runner = { workspace = true }
 robotcode-analyze = { workspace = true }
+robotcode-dashboard = { workspace = true }
 robotcode-repl = { workspace = true }
 robotcode-repl-server = { workspace = true }
 
@@ -129,6 +140,7 @@ robotcode-repl-server = { workspace = true }
 version_variable = [
   "src/robotcode/cli/__version__.py:__version__",
   "packages/analyze/src/robotcode/analyze/__version__.py:__version__",
+  "packages/dashboard/src/robotcode/dashboard/__version__.py:__version__",
   "packages/core/src/robotcode/core/__version__.py:__version__",
   "packages/debugger/src/robotcode/debugger/__version__.py:__version__",
   "packages/jsonrpc2/src/robotcode/jsonrpc2/__version__.py:__version__",
@@ -141,6 +153,7 @@ version_variable = [
 version_pattern = [
   'package.json:"version": "{version}"',
   "packages/analyze/pyproject.toml:\"robotcode\\S*=={version}\"",
+  "packages/dashboard/pyproject.toml:\"robotcode\\S*=={version}\"",
   "packages/core/pyproject.toml:\"robotcode\\S*=={version}\"",
   "packages/debugger/pyproject.toml:\"robotcode\\S*=={version}\"",
   "packages/jsonrpc2/pyproject.toml:\"robotcode\\S*=={version}\"",
@@ -296,6 +309,7 @@ mypy_path = [
   "packages/robot/src",
   "packages/runner/src",
   "packages/analyze/src",
+  "packages/dashboard/src",
   "packages/repl/src",
   "packages/repl_server/src",
 ]
