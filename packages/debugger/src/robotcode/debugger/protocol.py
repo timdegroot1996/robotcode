@@ -93,7 +93,17 @@ class DebugAdapterProtocol(JsonRPCProtocolBase):
             msg = header + body
 
             if self._loop:
-                self.write_transport.write(msg)
+                # transports are not thread safe: messages sent from the robot thread (robotExited, exit, ...)
+                # must be written on the loop, after the events that are already queued there
+                try:
+                    on_loop = asyncio.get_running_loop() is self._loop
+                except RuntimeError:
+                    on_loop = False
+
+                if on_loop:
+                    self.write_transport.write(msg)
+                else:
+                    self._loop.call_soon_threadsafe(self.write_transport.write, msg)
 
     def send_error(
         self,

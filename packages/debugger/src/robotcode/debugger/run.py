@@ -6,7 +6,9 @@ import time
 from concurrent.futures import CancelledError
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
+    Dict,
     List,
     Optional,
     Sequence,
@@ -48,6 +50,72 @@ def set_server(value: "DebugAdapterServer") -> None:
     with server_lock:
         global _server
         _server = value
+
+
+def _execution_events_enabled(app: Application, execution_events: Optional[bool]) -> bool:
+    """The option of `robotcode debug` if given, else `enabled` of `[tool.robotcode-dashboard]` in robot.toml.
+
+    The section belongs to the robotcode-dashboard plugin; it is looked up through the plugin manager,
+    so the debugger does not depend on that package. Off by default.
+    """
+    if execution_events is not None:
+        return execution_events
+
+    from robotcode.plugin.manager import PluginManager
+    from robotcode.robot.config.loader import load_robot_config_from_path
+    from robotcode.robot.config.utils import get_config_files
+
+    tools = {tool.tool_name: tool.config_class for tool in PluginManager.instance().tool_config_classes}
+    if "robotcode-dashboard" not in tools:
+        return False
+    try:
+        config_files, _, _ = get_config_files(
+            None,
+            app.config.config_files,
+            root_folder=app.config.root,
+            no_vcs=app.config.no_vcs,
+            verbose_callback=app.verbose,
+        )
+        robot_config = load_robot_config_from_path(*config_files, extra_tools=tools, verbose_callback=app.verbose)
+    except (TypeError, ValueError) as e:
+        app.warning(f"Could not read [tool.robotcode-dashboard] from robot.toml: {e}")
+        return False
+    config = robot_config.tool.get("robotcode-dashboard") if robot_config.tool is not None else None
+    return bool(getattr(config, "enabled", False))
+
+
+def _execution_events_args(app: Application, enabled: bool) -> List[str]:
+    """Registers robotframework-events when execution events are on and forwards its events as ``robotEvents``.
+
+    When they are off nothing is imported and no listener is added.
+    """
+    if not enabled:
+        app.verbose("Execution events are off")
+        return []
+
+    from robotcode.robot.utils import RF_VERSION
+
+    if RF_VERSION < (7, 0):
+        app.warning("Execution events are on, but they need Robot Framework 7.0 or newer")
+        return []
+
+    try:
+        import robotframework_events
+    except ImportError:
+        app.warning(
+            "Execution events are on, but robotframework-events is not installed in this environment: "
+            "python -m pip install robotframework-events"
+        )
+        return []
+
+    from .execution_events import ExecutionEventsBatcher
+
+    def send(batch: Dict[str, Any]) -> None:
+        # unsynced: never blocks the robot thread
+        Debugger.instance.send_event(robotframework_events, Event(event="robotEvents", body=batch))
+
+    robotframework_events.add_callback(ExecutionEventsBatcher(send))
+    return ["--listener", "robotframework_events.Listener"]
 
 
 @_logger.call
@@ -166,6 +234,7 @@ def run_debugger(
     output_log: bool = False,
     output_timestamps: bool = False,
     group_output: bool = False,
+    execution_events: Optional[bool] = None,
 ) -> int:
     if debug and debugpy and not is_debugpy_installed():
         app.warning("Debugpy not installed")
@@ -220,6 +289,7 @@ def run_debugger(
             "robotcode.debugger.listeners.ListenerV3",
             "--listener",
             "robotcode.debugger.listeners.ListenerV2",
+            *_execution_events_args(app, _execution_events_enabled(app, execution_events)),
             *args,
         ]
 

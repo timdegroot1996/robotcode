@@ -110,6 +110,12 @@ DEBUGPY_DEFAULT_PORT = 5678
     help="Fold/group messages or log messages.",
     show_default=True,
 )
+@click.option(
+    "--execution-events / --no-execution-events",
+    default=None,
+    help="Add the robotframework-events listener and send its events to the client. "
+    "Without this option `[tool.robotcode-dashboard] enabled` in robot.toml decides; off by default.",
+)
 @add_options(
     *server_options(
         ServerMode.TCP,
@@ -141,6 +147,7 @@ def debug(
     output_log: bool,
     output_timestamps: bool,
     group_output: bool,
+    execution_events: Optional[bool],
     stop_on_entry: bool,
     robot_options_and_args: Tuple[str, ...],
 ) -> None:
@@ -172,6 +179,7 @@ def debug(
     app.verbose(f"Output log: {output_log}")
     app.verbose(f"Output timestamps: {output_timestamps}")
     app.verbose(f"Group output: {group_output}")
+    app.verbose(f"Execution events: {execution_events}")
     app.verbose(f"Stop in entry: {stop_on_entry}")
     app.verbose(f"Robot options and args: {robot_options_and_args}")
 
@@ -197,6 +205,7 @@ def debug(
                 output_log=output_log,
                 output_timestamps=output_timestamps,
                 group_output=group_output,
+                execution_events=execution_events,
             )
         )
 
