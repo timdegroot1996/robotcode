@@ -197,6 +197,27 @@ export class DashboardSetup implements vscode.Disposable {
     });
   }
 
+  // starts a long-running tool with the project's Python (for example Playwright's trace viewer); its output
+  // goes to the RobotCode output; resolves false when it could not start
+  async startPython(folder: vscode.WorkspaceFolder | undefined, args: string[]): Promise<boolean> {
+    const python = await this.pythonManager.getPythonCommand(folder);
+    if (!python) return false;
+    this.outputChannel.appendLine(`Robot Dashboard: ${python} ${args.join(" ")}`);
+    return new Promise((resolve) => {
+      const child = cp.spawn(python, args, {
+        cwd: folder?.uri.fsPath,
+        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      });
+      child.stdout.on("data", (data: Buffer) => this.outputChannel.append(data.toString()));
+      child.stderr.on("data", (data: Buffer) => this.outputChannel.append(data.toString()));
+      child.on("error", (e) => {
+        this.outputChannel.appendLine(`Robot Dashboard: could not start ${python}: ${e.message}`);
+        resolve(false);
+      });
+      child.on("spawn", () => resolve(true));
+    });
+  }
+
   async environmentInfo(folder: vscode.WorkspaceFolder | undefined): Promise<EnvironmentInfo | undefined> {
     const result = await this.runRobotCode(folder, ["--format", "json", "dashboard", "info"]);
     if (!result.ok) return undefined;
