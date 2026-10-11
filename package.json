@@ -331,7 +331,31 @@
         }
       }
     },
+    "viewsWelcome": [
+      {
+        "view": "robotcode.dashboardView",
+        "contents": "Run history and the live view of running tests, from robotframework-dashboard.\n[Open Robot Dashboard](command:robotcode.openRobotDashboard)\nThe dashboard opens in an editor tab. Runs started from the Test Explorer appear on its Live page while they run."
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "robotcode-dashboard",
+          "title": "Robot Dashboard",
+          "icon": "images/dashboard/robotdashboard-light.svg"
+        }
+      ]
+    },
     "views": {
+      "robotcode-dashboard": [
+        {
+          "id": "robotcode.dashboardView",
+          "name": "Robot Dashboard",
+          "when": "robotcode.dashboard.enabled",
+          "icon": "images/dashboard/robotdashboard-light.svg",
+          "contextualTitle": "Robot Dashboard"
+        }
+      ],
       "explorer": [
         {
           "id": "robotcode.keywordsTreeView",
@@ -729,6 +753,43 @@
             "markdownDescription": "Specifies the python executable to be used for RobotCode.\n\n**Note:** This is normally not necessary and should only be used if you want to use a completely different Python interpreter than the interpreter that can be selected via VSCode. Please use the `RobotCode: Select Python Environment` command to select the python interpreter.\n\nIf you want to define a default interpreter for your workspace use the `python.defaultInterpreterPath` setting. See [here](https://github.com/microsoft/vscode-python/wiki/Setting-descriptions#pythondefaultinterpreterpath) for an explanation.",
             "scope": "resource",
             "markdownDeprecationMessage": "This setting is deprecated in favor of using `python.defaultInterpreterPath`"
+          },
+          "robotcode.dashboard.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Turns on Robot Dashboard: runs started by RobotCode get the `robotframework-events` listener, show up live on the dashboard's Live page and are kept in its history (`robotframework-dashboard`). Both packages are installed in the project's Python environment; turning this on offers to install them. When off, no listener is added to runs at all. If not set here, `[tool.robotcode-dashboard] enabled` in `robot.toml` decides.",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.openOnRun": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Opens the Robot Dashboard with its Live page when a run starts, while the dashboard is turned on (`#robotcode.dashboard.enabled#`).",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.addRunsToHistory": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Adds the `output.xml` of every run to the Robot Dashboard database when the run ends, while the dashboard is turned on (`#robotcode.dashboard.enabled#`).",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.database": {
+            "type": "string",
+            "default": ".robotdashboard/robot_results.db",
+            "markdownDescription": "Path of the Robot Dashboard database, relative to the workspace folder. By default it lies in `.robotdashboard/` next to the archived runs; that folder gets its own `.gitignore`. Set it to `robot_results.db` to share the history with the `robotdashboard` command line tool.",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.archiveFolder": {
+            "type": "string",
+            "default": ".robotdashboard/runs",
+            "markdownDescription": "Folder, relative to the workspace folder, where the `output.xml`, `log.html`, `report.html` and events of every run are kept, one subfolder per run, so the dashboard can open each run's own log.",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.keepRuns": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 0,
+            "markdownDescription": "Number of runs kept in the Robot Dashboard database and archive folder. Older runs are removed after each run. `0` keeps all runs.",
+            "scope": "resource"
           }
         }
       },
@@ -1402,6 +1463,18 @@
         "enablement": "resourceLangId == robotframework && !config.robotcode.robocop.enabled"
       },
       {
+        "title": "Disable Robot Dashboard",
+        "category": "RobotCode",
+        "command": "robotcode.disableRobotDashboard",
+        "enablement": "robotcode.dashboard.enabled"
+      },
+      {
+        "title": "Enable Robot Dashboard",
+        "category": "RobotCode",
+        "command": "robotcode.enableRobotDashboard",
+        "enablement": "!robotcode.dashboard.enabled"
+      },
+      {
         "title": "Report Issue...",
         "category": "RobotCode",
         "command": "robotcode.reportIssue"
@@ -1459,6 +1532,12 @@
         "category": "RobotCode",
         "command": "robotcode.openDocumentationViewer",
         "icon": "$(book)"
+      },
+      {
+        "title": "Open Robot Dashboard",
+        "category": "RobotCode",
+        "command": "robotcode.openRobotDashboard",
+        "icon": "$(graph)"
       },
       {
         "title": "Open Documentation Viewer in New Window",
@@ -1890,6 +1969,10 @@
                 "type": "boolean",
                 "description": "Group start and stop suite/test/keyword messages in debug console.",
                 "default": false
+              },
+              "executionEvents": {
+                "type": "boolean",
+                "markdownDescription": "Adds the `robotframework-events` listener and sends its events to the Robot Dashboard. Defaults to `#robotcode.dashboard.enabled#`; when that is not set, `[tool.robotcode-dashboard] enabled` in `robot.toml` decides."
               },
               "mode": {
                 "type": "string",

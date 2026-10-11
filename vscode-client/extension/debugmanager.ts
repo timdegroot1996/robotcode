@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as vscode from "vscode";
+import { explicitDashboardSetting } from "./dashboardSetup";
 import { PythonManager } from "./pythonmanger";
 import { CONFIG_SECTION } from "./config";
 import { LanguageClientsManager, SUPPORTED_LANGUAGES, toVsCodeRange } from "./languageclientsmanger";
@@ -178,6 +179,10 @@ class RobotCodeDebugConfigurationProvider implements vscode.DebugConfigurationPr
 
       debugConfiguration.groupOutput =
         (debugConfiguration?.groupOutput as boolean | undefined) ?? config.get<boolean>("debug.groupOutput");
+
+      // opt-in: only an explicit setting is passed on, otherwise robot.toml decides (off by default)
+      debugConfiguration.executionEvents =
+        (debugConfiguration?.executionEvents as boolean | undefined) ?? explicitDashboardSetting(folder);
 
       if (!debugConfiguration.attachPython || debugConfiguration.noDebug) {
         debugConfiguration.attachPython = false;

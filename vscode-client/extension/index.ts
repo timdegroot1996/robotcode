@@ -9,6 +9,8 @@ import { LanguageModelToolsManager } from "./languageModelToolsManager";
 import { ChatPluginsManager } from "./chatPluginsManager";
 import { NotebookManager } from "./notebook";
 import { DocumentationViewerManager } from "./documentationViewer";
+import { DashboardSetup } from "./dashboardSetup";
+import { DashboardViewerManager } from "./dashboardViewer";
 import { createExtendMarkdownIt } from "./markdownHighlighting";
 import path from "path";
 
@@ -97,6 +99,7 @@ export async function activateAsync(context: vscode.ExtensionContext): Promise<R
   languageClientManger = new LanguageClientsManager(context, pythonManager, outputChannel);
 
   const debugManager = new DebugManager(context, pythonManager, languageClientManger, outputChannel);
+  const dashboardSetup = new DashboardSetup(context, pythonManager, outputChannel);
 
   const testControllerManger = new TestControllerManager(context, languageClientManger, debugManager, outputChannel);
 
@@ -105,11 +108,20 @@ export async function activateAsync(context: vscode.ExtensionContext): Promise<R
     languageClientManger,
     debugManager,
     testControllerManger,
-    new LanguageToolsManager(context, languageClientManger, pythonManager, testControllerManger, outputChannel),
+    new LanguageToolsManager(
+      context,
+      languageClientManger,
+      pythonManager,
+      testControllerManger,
+      outputChannel,
+      dashboardSetup,
+    ),
     new LanguageModelToolsManager(context, languageClientManger, outputChannel),
     new ChatPluginsManager(context, outputChannel),
     new NotebookManager(context, pythonManager, languageClientManger, outputChannel),
     new DocumentationViewerManager(context, pythonManager),
+    dashboardSetup,
+    new DashboardViewerManager(context, dashboardSetup, languageClientManger, outputChannel),
     vscode.commands.registerCommand("robotcode.showDocumentation", async (url: string) => {
       if (url.indexOf("&theme=%24%7Btheme%7D") > 0) {
         url = url.replace("%24%7Btheme%7D", getDocTheme());

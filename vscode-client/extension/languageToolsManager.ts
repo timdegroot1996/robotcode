@@ -11,6 +11,7 @@ import {
 import { PythonManager } from "./pythonmanger";
 import { LanguageStatusSeverity } from "vscode";
 import { TestControllerManager } from "./testcontrollermanager";
+import { DashboardSetup, EnvironmentInfo, dashboardEnabledFor, environmentProblem } from "./dashboardSetup";
 
 import * as path from "path";
 import * as fs from "fs-extra";
@@ -72,6 +73,8 @@ async function waitForShellIntegration(
 
 export class LanguageToolsManager {
   private _workspaceFolderLanguageStatuses = new WeakMap<vscode.WorkspaceFolder, ProjectInfo>();
+  // robotframework-dashboard and -events in the folder's environment, checked in a separate process
+  private _workspaceFolderDashboardInfos = new WeakMap<vscode.WorkspaceFolder, EnvironmentInfo | undefined>();
   private _disposables: vscode.Disposable;
 
   readonly robotCode: vscode.LanguageStatusItem;
@@ -79,6 +82,7 @@ export class LanguageToolsManager {
   readonly robocopVersion: vscode.LanguageStatusItem;
   readonly pythonVersion: vscode.LanguageStatusItem;
   readonly profiles: vscode.LanguageStatusItem;
+  readonly dashboardVersion: vscode.LanguageStatusItem;
 
   readonly toolMenu: QuickPickActionItem[] = [
     { label: "Settings", kind: vscode.QuickPickItemKind.Separator },
@@ -224,6 +228,7 @@ export class LanguageToolsManager {
     public readonly pythonManager: PythonManager,
     public testControllerManger: TestControllerManager,
     public readonly outputChannel: vscode.OutputChannel,
+    public readonly dashboardSetup: DashboardSetup,
   ) {
     const selector = { language: "robotframework" };
     this.robotCode = vscode.languages.createLanguageStatusItem("robotcode1", selector);
@@ -234,12 +239,19 @@ export class LanguageToolsManager {
     this.pythonVersion = vscode.languages.createLanguageStatusItem("robotcode3", selector);
     this.robocopVersion = vscode.languages.createLanguageStatusItem("robotcode4", selector);
     this.profiles = vscode.languages.createLanguageStatusItem("robotcode5", selector);
+    // VS Code orders the popup by severity, then by id: "robotcode4b" puts it right after Robocop
+    this.dashboardVersion = vscode.languages.createLanguageStatusItem("robotcode4b", selector);
 
     this._disposables = vscode.Disposable.from(
       this.robotCode,
       this.robotVersion,
       this.pythonVersion,
       this.robocopVersion,
+      this.dashboardVersion,
+      dashboardSetup.onDidChange(async () => {
+        this._workspaceFolderDashboardInfos = new WeakMap<vscode.WorkspaceFolder, EnvironmentInfo | undefined>();
+        await this.updateItems();
+      }),
       vscode.commands.registerCommand("robotcode.createNewFile", LanguageToolsManager.createNewFile),
       vscode.commands.registerCommand(
         "robotcode.startTerminalRepl",
@@ -463,6 +475,7 @@ export class LanguageToolsManager {
           this.removeFolder(event.resource);
         } else {
           this._workspaceFolderLanguageStatuses = new WeakMap<vscode.WorkspaceFolder, ProjectInfo>();
+          this._workspaceFolderDashboardInfos = new WeakMap<vscode.WorkspaceFolder, EnvironmentInfo | undefined>();
         }
 
         await this.updateItems();
@@ -561,6 +574,7 @@ export class LanguageToolsManager {
     if (this._workspaceFolderLanguageStatuses.has(folder)) {
       this._workspaceFolderLanguageStatuses.delete(folder);
     }
+    this._workspaceFolderDashboardInfos.delete(folder);
   }
 
   dispose(): void {
@@ -626,6 +640,8 @@ export class LanguageToolsManager {
       command: robocopEnabled ? "robotcode.disableRoboCop" : "robotcode.enableRoboCop",
     };
 
+    await this.updateDashboardItem(folder);
+
     const pythonInfo = folder !== undefined ? await this.pythonManager.getPythonInfo(folder) : undefined;
 
     this.pythonVersion.text = `$(robotcode-python) ${pythonInfo?.version ?? NOT_INSTALLED} ${pythonInfo?.name ?? NOT_INSTALLED}`;
@@ -642,5 +658,24 @@ export class LanguageToolsManager {
     } else {
       this.pythonVersion.severity = LanguageStatusSeverity.Error;
     }
+  }
+
+  // like the Robocop item: the installed robotframework-dashboard version and an Enable/Disable switch
+  private async updateDashboardItem(folder: vscode.WorkspaceFolder | undefined): Promise<void> {
+    if (folder !== undefined && !this._workspaceFolderDashboardInfos.has(folder)) {
+      this._workspaceFolderDashboardInfos.set(folder, await this.dashboardSetup.environmentInfo(folder));
+    }
+    const info = folder !== undefined ? this._workspaceFolderDashboardInfos.get(folder) : undefined;
+    const enabled = dashboardEnabledFor(folder, info);
+    const problem = enabled && info !== undefined ? environmentProblem(info) : undefined;
+
+    this.dashboardVersion.text = `$(dashboard) ${info?.versions["robotframework-dashboard"] ?? NOT_INSTALLED}`;
+    this.dashboardVersion.detail = "Robot Dashboard Version";
+    this.dashboardVersion.severity = problem ? LanguageStatusSeverity.Warning : LanguageStatusSeverity.Information;
+    this.dashboardVersion.command = {
+      title: enabled ? "Disable" : "Enable",
+      command: enabled ? "robotcode.disableRobotDashboard" : "robotcode.enableRobotDashboard",
+      tooltip: problem ?? `robotframework-events ${info?.versions["robotframework-events"] ?? NOT_INSTALLED}`,
+    };
   }
 }
