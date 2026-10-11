@@ -802,6 +802,12 @@
             "default": true,
             "markdownDescription": "Marks every line that ran with a pass or fail icon (the failure message is shown by the Test Explorer). The marks stay until the next run or until the file is edited. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`).",
             "scope": "window"
+          },
+          "robotcode.liveExecution.showProgress": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Shows the progress of a run started by RobotCode (tests done, failed) in the status bar. Needs Robot Dashboard turned on (`#robotcode.dashboard.enabled#`), which sends the execution events.",
+            "scope": "window"
           }
         }
       },
