@@ -916,7 +916,7 @@ export class LanguageClientsManager {
   }
 
   public async openUriInDocumentationView(uri: vscode.Uri): Promise<void> {
-    const doc_uri = await this.convertToDocumentationUri(uri);
+    const doc_uri = withFragmentOf(await this.convertToDocumentationUri(uri), uri);
     if (doc_uri) {
       await vscode.commands.executeCommand("robotcode.showDocumentation", doc_uri.toString(true));
     } else {
@@ -937,7 +937,7 @@ export class LanguageClientsManager {
         break;
       case "externalHttp":
         await vscode.env.openExternal(
-          await vscode.env.asExternalUri((await this.convertToDocumentationUri(file)) ?? file),
+          await vscode.env.asExternalUri(withFragmentOf(await this.convertToDocumentationUri(file), file) ?? file),
         );
         break;
       case "externalFile":
@@ -1169,4 +1169,9 @@ export class LanguageClientsManager {
       )) ?? undefined
     );
   }
+}
+
+// the documentation server URL has no fragment; keep the original one (for example `log.html#s1-t1-k2`)
+function withFragmentOf(converted: vscode.Uri | undefined, original: vscode.Uri): vscode.Uri | undefined {
+  return converted && original.fragment ? converted.with({ fragment: original.fragment }) : converted;
 }
