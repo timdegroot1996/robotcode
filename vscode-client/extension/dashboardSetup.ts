@@ -176,9 +176,16 @@ export class DashboardSetup implements vscode.Disposable {
     folder: vscode.WorkspaceFolder | undefined,
     args: string[],
   ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+    return this.runPython(folder, [this.pythonManager.robotCodeMain, "--no-color", "--no-pager", ...args]);
+  }
+
+  // runs the project's Python with `allArgs`
+  async runPython(
+    folder: vscode.WorkspaceFolder | undefined,
+    allArgs: string[],
+  ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
     const python = await this.pythonManager.getPythonCommand(folder);
     if (!python) return { ok: false, stdout: "", stderr: "No Python environment selected" };
-    const allArgs = [this.pythonManager.robotCodeMain, "--no-color", "--no-pager", ...args];
     this.outputChannel.appendLine(`Robot Dashboard: ${python} ${allArgs.join(" ")}`);
     return new Promise((resolve) => {
       cp.execFile(

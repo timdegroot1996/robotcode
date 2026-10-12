@@ -26,6 +26,8 @@ export interface ExecutionRunEnded {
   readonly external: boolean;
   // false when the run stopped without run.ended (stopped, crashed)
   readonly completed: boolean;
+  // a run started elsewhere whose process is gone without run.ended: killed or crashed
+  readonly crashed?: boolean;
 }
 
 const EVENTS_FILE_PATTERN = "**/events*.jsonl";
@@ -331,7 +333,13 @@ export class ExecutionEventsHub implements vscode.Disposable {
       // stopped without run.ended: killed or crashed
       tail.ended = true;
       if (tail.announced)
-        this._onDidEndRun.fire({ key: tail.key, folder: tail.folder, external: true, completed: false });
+        this._onDidEndRun.fire({
+          key: tail.key,
+          folder: tail.folder,
+          external: true,
+          completed: false,
+          crashed: true,
+        });
     }
     this.updatePolling();
   }
