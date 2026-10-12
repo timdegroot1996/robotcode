@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import * as zlib from "zlib";
@@ -7,7 +8,7 @@ import { CONFIG_SECTION } from "./config";
 import { DashboardSetup } from "./dashboardSetup";
 import { ExecutionEventsBatch, ExecutionEventsHub, RobotEvent } from "./executionEvents";
 import { LanguageClientsManager } from "./languageclientsmanger";
-import { PabotRun, pabotResultsFolder } from "./pabotRun";
+import { PabotRun, outputIds, pabotResultsFolder, withLogIds } from "./pabotRun";
 
 const VIEW_TYPE = "robotcode.dashboardViewer";
 // robotdashboard --embed puts this on every script tag; the page runs under a CSP with a fresh nonce
@@ -47,6 +48,8 @@ export class DashboardViewerManager implements vscode.Disposable {
   private _events: RobotEvent[] = [];
   // debug sessions that sent events: their runs go to the history
   private readonly _eventSessions = new Set<string>();
+  // the run id each event stream started last
+  private readonly _runIds = new Map<string, string>();
   // the pabot run whose items arrive now, and the event streams of its items
   private _pabot: PabotRun | undefined;
   private readonly _pabotItems = new Map<string, PabotRun>();
@@ -79,6 +82,10 @@ export class DashboardViewerManager implements vscode.Disposable {
           return;
         }
         if (run.external && run.completed) void this.addExternalRunToHistory(run.folder);
+        // a debug session whose robot never reported its exit, or a run elsewhere whose process is gone
+        else if (run.crashed || (!run.external && this._eventSessions.has(run.key)))
+          void this.addCrashedRunToHistory(run.key, run.folder);
+        this._runIds.delete(run.key);
       }),
       vscode.debug.onDidReceiveDebugSessionCustomEvent(async (event) => {
         if (event.session.configuration.type !== "robotcode" || event.event !== "robotExited") return;
@@ -112,6 +119,8 @@ export class DashboardViewerManager implements vscode.Disposable {
   private async onRobotEvents(batch: ExecutionEventsBatch): Promise<void> {
     if (batch.events.length === 0) return;
     if (!batch.external) this._eventSessions.add(batch.key);
+    const started = batch.events.find((e) => e.type === "run.started");
+    if (typeof started?.run === "string") this._runIds.set(batch.key, started.run);
     const pabot = this.pabotRunOf(batch);
     if (pabot === undefined) {
       await this.showEvents(batch.events, batch.folder);
@@ -144,6 +153,8 @@ export class DashboardViewerManager implements vscode.Disposable {
   private async endPabotRun(pabot: PabotRun, folder: vscode.WorkspaceFolder | undefined): Promise<void> {
     if (pabot.ended || !pabot.complete) return;
     await this.showEvents(pabot.finish(), folder);
+    // the run's events; a new run while waiting for output.xml starts a new list
+    const events = this._events;
     const outputFile = path.join(pabot.outputDir, "output.xml");
     const stable = async (): Promise<boolean> => {
       for (let waited = 0; waited < PABOT_OUTPUT_WAIT_MS; waited += 1000) {
@@ -163,11 +174,18 @@ export class DashboardViewerManager implements vscode.Disposable {
       const file = path.join(pabot.outputDir, name);
       return fs.existsSync(file) ? file : undefined;
     };
-    await this.addRunToHistory(folder, {
-      outputFile,
-      logFile: sibling("log.html"),
-      reportFile: sibling("report.html"),
-    });
+    // archived with the ids of pabot's merged log.html, so its links open the right test and step
+    let archived = events;
+    try {
+      archived = withLogIds(events, outputIds(fs.readFileSync(outputFile, "utf-8")));
+    } catch (e) {
+      this.outputChannel.appendLine(`Robot Dashboard: could not read the ids of ${outputFile}: ${String(e)}`);
+    }
+    await this.addRunToHistory(
+      folder,
+      { outputFile, logFile: sibling("log.html"), reportFile: sibling("report.html") },
+      archived,
+    );
   }
 
   private async showEvents(events: RobotEvent[], folder: vscode.WorkspaceFolder | undefined): Promise<void> {
@@ -412,7 +430,44 @@ export class DashboardViewerManager implements vscode.Disposable {
     });
   }
 
-  private async addRunToHistory(folder: vscode.WorkspaceFolder | undefined, files: RobotExitedBody): Promise<void> {
+  // `events`: the run's events to archive, the current run's by default
+  // A run that stopped without output.xml (crashed, killed): `rfevents rebuild` builds one from its events, in
+  // which what did not finish failed. Needs robotframework-events 0.6.0; older versions only log the failure.
+  private async addCrashedRunToHistory(key: string, folder: vscode.WorkspaceFolder | undefined): Promise<void> {
+    const events = this._events;
+    const run = events.find((e) => e.type === "run.started")?.run;
+    // only the stream's own run, and only one that did not end: a run that ended reports its own output.xml
+    if (run === undefined || run !== this._runIds.get(key) || events.some((e) => e.type === "run.ended")) return;
+    if (!events.some((e) => e.type === "suite.started")) return;
+    this._eventSessions.delete(key);
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "robotcode-rebuild-"));
+    try {
+      const eventsFile = path.join(temp, "events.jsonl");
+      const outputFile = path.join(temp, "output.xml");
+      fs.writeFileSync(eventsFile, events.map((e) => JSON.stringify(e)).join("\n") + "\n");
+      const result = await this.setup.runPython(folder, [
+        "-m",
+        "robotframework_events",
+        "rebuild",
+        eventsFile,
+        "-o",
+        outputFile,
+      ]);
+      if (!result.ok) return;
+      this.outputChannel.appendLine(
+        "Robot Dashboard: the run did not finish; its history entry is rebuilt from its events",
+      );
+      await this.addRunToHistory(folder, { outputFile }, events);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  private async addRunToHistory(
+    folder: vscode.WorkspaceFolder | undefined,
+    files: RobotExitedBody,
+    events: RobotEvent[] = this._events,
+  ): Promise<void> {
     if (!this.config.get<boolean>("dashboard.addRunsToHistory", true)) return;
     const existing = (file: string | undefined): string | undefined => {
       if (!file) return undefined;
@@ -423,7 +478,7 @@ export class DashboardViewerManager implements vscode.Disposable {
     if (!outputFile) return;
     this._folder = folder ?? this._folder;
 
-    const archived = this.archiveRun(folder, outputFile, existing(files.logFile), existing(files.reportFile));
+    const archived = this.archiveRun(folder, events, outputFile, existing(files.logFile), existing(files.reportFile));
     const keep = this.config.get<number>("dashboard.keepRuns", 100);
     const result = await this.setup.runRobotCode(folder, [
       "dashboard",
@@ -444,11 +499,12 @@ export class DashboardViewerManager implements vscode.Disposable {
   // the events are gzipped (about 15 times smaller) and named like robotdashboard looks for them
   private archiveRun(
     folder: vscode.WorkspaceFolder | undefined,
+    events: RobotEvent[],
     outputFile: string,
     logFile: string | undefined,
     reportFile: string | undefined,
   ): string {
-    const run = this._events.find((e) => e.type === "run.started")?.run as string | undefined;
+    const run = events.find((e) => e.type === "run.started")?.run as string | undefined;
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
     const target = path.join(this.archiveRoot(folder), run ? `${stamp}-${run.slice(0, 8)}` : stamp);
     try {
@@ -457,16 +513,16 @@ export class DashboardViewerManager implements vscode.Disposable {
       fs.copyFileSync(outputFile, path.join(target, "output.xml"));
       if (logFile) fs.copyFileSync(logFile, path.join(target, "log.html"));
       if (reportFile) fs.copyFileSync(reportFile, path.join(target, "report.html"));
-      if (this._events.length > 0) {
+      if (events.length > 0) {
         // log.html links its screenshots relative to itself; the Live page relative to run.started.outputdir
-        const started = this._events.find((e) => e.type === "run.started");
+        const started = events.find((e) => e.type === "run.started");
         const base = logFile
           ? path.dirname(logFile)
           : typeof started?.outputdir === "string"
             ? started.outputdir
             : path.dirname(outputFile);
-        const events = this.archiveAttachments(this._events, base, target);
-        const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+        const archived = this.archiveAttachments(events, base, target);
+        const lines = archived.map((e) => JSON.stringify(e)).join("\n") + "\n";
         fs.writeFileSync(path.join(target, "events.jsonl.gz"), zlib.gzipSync(lines));
       }
       return path.join(target, "output.xml");

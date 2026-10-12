@@ -8,14 +8,30 @@ import { RobotEvent } from "./executionEvents";
 // - one run.started and one top-level suite; suites with the same full name in several items are one suite
 // - new ids that follow the format (s1-s2-t1-k3), numbered in start order, so they never collide
 // - run.ended once the last item pabot starts has ended (`pabot.last`), with the stats of all items
-// The ids are not the ids of pabot's merged output.xml, which numbers suites in source order.
+// - links in HTML messages (screenshots) relative to the merged output directory, so they point into the
+//   item's folder (pabot_results/<n>/...) where the item wrote them
+// The ids are not the ids of pabot's merged output.xml, which numbers suites in source order; `withLogIds` maps
+// them once that file is there.
 
 type Stats = { total: number; passed: number; failed: number; skipped: number };
 
 interface Item {
   // item id -> merged id
   readonly ids: Map<string, string>;
+  // the item's output directory relative to the run's, with "/" (for example "pabot_results/3")
+  readonly folder: string | undefined;
   ended: boolean;
+}
+
+const LINK = /(<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*)(["'])(.*?)\2/gi;
+
+// links in an HTML message relative to `folder` instead of the item's output directory; URLs, absolute paths and
+// fragments stay as they are
+function relinked(html: string, folder: string): string {
+  return html.replace(LINK, (match: string, start: string, quote: string, link: string) => {
+    if (!link || link.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(link) || /^[\\/]/.test(link)) return match;
+    return `${start}${quote}${path.posix.normalize(`${folder}/${link}`)}${quote}`;
+  });
 }
 
 interface MergedSuite {
@@ -150,7 +166,15 @@ export class PabotRun {
     const t = typeof event.t === "number" ? event.t : Date.now() / 1000;
     if (event.type === "run.started") {
       const pabot = (event.pabot ?? {}) as { index?: number; processes?: number; last?: boolean };
-      this._items.set(key, { ids: new Map(), ended: false });
+      const folder =
+        typeof event.outputdir === "string"
+          ? path.relative(this.outputDir, event.outputdir).split(path.sep).join("/")
+          : undefined;
+      this._items.set(key, {
+        ids: new Map(),
+        folder: folder && !folder.startsWith("..") ? folder : undefined,
+        ended: false,
+      });
       if (typeof pabot.index === "number") this._indexes.add(pabot.index);
       if (pabot.last) this._lastStarted = true;
       if (this._started) return undefined;
@@ -246,7 +270,12 @@ export class PabotRun {
       case "message.logged":
         // messages outside any item (without parent) are kept as they are
         if (event.parent !== undefined && parent === undefined) return undefined;
-        return this.renumber(event, parent !== undefined ? { parent } : {});
+        return this.renumber(event, {
+          ...(parent !== undefined ? { parent } : {}),
+          ...(event.html && typeof event.text === "string" && item.folder
+            ? { text: relinked(event.text, item.folder) }
+            : {}),
+        });
       case "run.ended":
         item.ended = true;
         addStats(this._stats, event.stats);
@@ -256,4 +285,67 @@ export class PabotRun {
         return undefined;
     }
   }
+}
+
+const XML_TAG = /<(\/?)(suite|test)\b([^>]*)>/g;
+const XML_ATTRIBUTE = /(\w+)="([^"]*)"/g;
+
+function xmlText(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+// the ids of the suites and tests in an output.xml by full name
+export function outputIds(xml: string): Map<string, string> {
+  const ids = new Map<string, string>();
+  const suites: string[] = [];
+  for (const match of xml.matchAll(XML_TAG)) {
+    const [, closing, tag, attributes] = match;
+    if (closing) {
+      if (tag === "suite") suites.pop();
+      continue;
+    }
+    const attrs = new Map([...attributes.matchAll(XML_ATTRIBUTE)].map((a) => [a[1], xmlText(a[2])]));
+    const id = attrs.get("id");
+    const name = attrs.get("name") ?? "";
+    const parent = suites.at(-1);
+    const full = parent !== undefined ? `${parent}.${name}` : name;
+    if (id !== undefined && !ids.has(full)) ids.set(full, id);
+    if (tag === "suite") suites.push(full);
+  }
+  return ids;
+}
+
+// The merged events with the ids of pabot's merged output.xml (`ids`, see outputIds), so links to its log.html
+// open the right test and step. Suites and tests are matched by full name; a step keeps its place below its
+// test or suite. Events of suites or tests that the file does not have keep their ids.
+export function withLogIds(events: RobotEvent[], ids: Map<string, string>): RobotEvent[] {
+  const mapped = new Map<string, string>();
+  for (const event of events) {
+    if ((event.type === "suite.started" || event.type === "test.started") && typeof event.id === "string") {
+      const id = ids.get(String(event.longname ?? ""));
+      if (id !== undefined) mapped.set(event.id, id);
+    }
+  }
+  if (mapped.size === 0) return events;
+  // the longest known prefix of an id, followed by the rest of it
+  const map = (id: unknown): unknown => {
+    if (typeof id !== "string") return id;
+    for (let end = id.length; end > 0; end = id.lastIndexOf("-", end - 1)) {
+      const prefix = mapped.get(id.slice(0, end));
+      if (prefix !== undefined) return prefix + id.slice(end);
+    }
+    return id;
+  };
+  return events.map((event) => {
+    if (event.id === undefined && event.parent === undefined) return event;
+    const copy = { ...event };
+    if (copy.id !== undefined) copy.id = map(copy.id);
+    if (copy.parent !== undefined) copy.parent = map(copy.parent);
+    return copy;
+  });
 }
