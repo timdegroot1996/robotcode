@@ -116,6 +116,19 @@ DEBUGPY_DEFAULT_PORT = 5678
     help="Add the robotframework-events listener and send its events to the client. "
     "Without this option `[tool.robotcode-dashboard] enabled` in robot.toml decides; off by default.",
 )
+@click.option(
+    "--execution-events-screenshots",
+    type=click.Choice(["off", "actions", "all", "failure"], case_sensitive=False),
+    default=None,
+    help="Screenshots after Browser, SeleniumLibrary and AppiumLibrary keywords for the playback on the Live page. "
+    "Without this option `mode` of `[tool.robotcode-dashboard.screenshots]` in robot.toml decides; off by default.",
+)
+@click.option(
+    "--execution-events-screenshot-libraries",
+    default=None,
+    help="Libraries that get step screenshots, comma separated (Browser,SeleniumLibrary); added to `libraries` of "
+    "`[tool.robotcode-dashboard.screenshots]` in robot.toml. No library gets screenshots until it is named.",
+)
 @add_options(
     *server_options(
         ServerMode.TCP,
@@ -148,6 +161,8 @@ def debug(
     output_timestamps: bool,
     group_output: bool,
     execution_events: Optional[bool],
+    execution_events_screenshots: Optional[str],
+    execution_events_screenshot_libraries: Optional[str],
     stop_on_entry: bool,
     robot_options_and_args: Tuple[str, ...],
 ) -> None:
@@ -180,6 +195,8 @@ def debug(
     app.verbose(f"Output timestamps: {output_timestamps}")
     app.verbose(f"Group output: {group_output}")
     app.verbose(f"Execution events: {execution_events}")
+    app.verbose(f"Execution events screenshots: {execution_events_screenshots}")
+    app.verbose(f"Execution events screenshot libraries: {execution_events_screenshot_libraries}")
     app.verbose(f"Stop in entry: {stop_on_entry}")
     app.verbose(f"Robot options and args: {robot_options_and_args}")
 
@@ -206,6 +223,8 @@ def debug(
                 output_timestamps=output_timestamps,
                 group_output=group_output,
                 execution_events=execution_events,
+                execution_events_screenshots=execution_events_screenshots,
+                execution_events_screenshot_libraries=execution_events_screenshot_libraries,
             )
         )
 

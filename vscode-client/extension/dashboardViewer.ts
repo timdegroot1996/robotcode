@@ -31,6 +31,9 @@ type RobotExitedBody = { outputFile?: string; logFile?: string; reportFile?: str
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const LINKED_FILE = /<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*(["'])(.*?)\1/gi;
 
+// where robotframework-events writes step screenshots, inside the output directory
+const STEP_SCREENSHOTS_FOLDER = "rfevents-screenshots";
+
 // pabot writes its merged output.xml after the last item; how long to wait for it
 const PABOT_OUTPUT_WAIT_MS = 120000;
 
@@ -533,12 +536,14 @@ export class DashboardViewerManager implements vscode.Disposable {
   }
 
   // Copies the files that the run's HTML messages link to (screenshots of Browser, SeleniumLibrary and others,
-  // as log.html shows them) into the run's folder at the same relative path, so the archived log.html and a
-  // replay still show them after the next run deleted the originals. Only files inside `base`, at most
+  // as log.html shows them) and its step screenshots into the run's folder at the same relative path, so the archived
+  // log.html and a replay still show them after the next run deleted the originals. Only files inside `base`, at most
   // MAX_ATTACHMENT_BYTES per run. The archived events point their output directory at the run's folder.
   private archiveAttachments(events: RobotEvent[], base: string, target: string): RobotEvent[] {
     const linked = new Set<string>();
     for (const event of events) {
+      // step screenshots (robotframework-events option screenshots), relative to the output directory
+      if (event.type === "step.screenshot" && typeof event.path === "string") linked.add(event.path);
       if (event.type !== "message.logged" || !event.html || typeof event.text !== "string") continue;
       for (const match of event.text.matchAll(LINKED_FILE)) linked.add(match[2].trim());
     }
@@ -588,6 +593,11 @@ export class DashboardViewerManager implements vscode.Disposable {
         .sort();
       for (const name of runs.slice(0, Math.max(0, runs.length - keep))) {
         fs.rmSync(path.join(root, name), { recursive: true, force: true });
+      }
+      // step screenshots are big: only the newest runs keep them, older runs keep their events and log
+      const keepScreenshots = Math.max(0, this.config.get<number>("dashboard.keepScreenshotRuns", 10));
+      for (const name of runs.slice(0, Math.max(0, runs.length - keepScreenshots))) {
+        fs.rmSync(path.join(root, name, STEP_SCREENSHOTS_FOLDER), { recursive: true, force: true });
       }
     } catch (e) {
       this.outputChannel.appendLine(`Robot Dashboard: could not prune the archive: ${String(e)}`);

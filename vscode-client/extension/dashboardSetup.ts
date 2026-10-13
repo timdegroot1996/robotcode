@@ -41,6 +41,22 @@ export function explicitDashboardSetting(folder: vscode.WorkspaceFolder | undefi
   return inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue;
 }
 
+// the libraries the user switched step screenshots on for, undefined when not set anywhere (robot.toml decides)
+export function explicitScreenshotLibrariesSetting(folder: vscode.WorkspaceFolder | undefined): string[] | undefined {
+  const inspected = vscode.workspace
+    .getConfiguration(CONFIG_SECTION, folder)
+    .inspect<string[]>("dashboard.screenshotLibraries");
+  return inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue;
+}
+
+// the step screenshots mode the user set, undefined when not set anywhere (robot.toml decides)
+export function explicitStepScreenshotsSetting(folder: vscode.WorkspaceFolder | undefined): string | undefined {
+  const inspected = vscode.workspace
+    .getConfiguration(CONFIG_SECTION, folder)
+    .inspect<string>("dashboard.stepScreenshots");
+  return inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue;
+}
+
 export function versionAtLeast(version: string | null | undefined, minimum: string | undefined): boolean {
   if (!version) return false;
   if (!minimum) return true;

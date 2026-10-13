@@ -261,6 +261,13 @@ export class PabotRun {
         item.ids.set(id, merged);
         return this.renumber(event, { id: merged, parent });
       }
+      case "step.screenshot": {
+        // the image lies in the item's folder
+        const merged = id !== undefined ? item.ids.get(id) : undefined;
+        if (merged === undefined || typeof event.path !== "string") return undefined;
+        const file = item.folder ? path.posix.normalize(`${item.folder}/${event.path}`) : event.path;
+        return this.renumber(event, { id: merged, path: file });
+      }
       case "test.ended":
       case "step.ended":
       case "status.changed": {

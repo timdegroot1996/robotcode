@@ -760,6 +760,40 @@
             "markdownDescription": "Turns on Robot Dashboard: runs started by RobotCode get the `robotframework-events` listener, show up live on the dashboard's Live page and are kept in its history (`robotframework-dashboard`). Runs started elsewhere (a terminal, a task runner) with `--listener robotframework_events` show up too: RobotCode follows the `events*.jsonl` files they write in the workspace. Both packages are installed in the project's Python environment; turning this on offers to install them. When off, no listener is added to runs at all. If not set here, `[tool.robotcode-dashboard] enabled` in `robot.toml` decides.",
             "scope": "resource"
           },
+          "robotcode.dashboard.stepScreenshots": {
+            "type": "string",
+            "enum": [
+              "off",
+              "actions",
+              "all",
+              "failure"
+            ],
+            "enumDescriptions": [
+              "No step screenshots.",
+              "After every keyword of the libraries in `#robotcode.dashboard.screenshotLibraries#`, except the read-only ones their preset or robot.toml excludes, and after failures.",
+              "After every keyword of those libraries, exclusions ignored.",
+              "Only after failed keywords of those libraries."
+            ],
+            "default": "off",
+            "markdownDescription": "Step screenshots of runs started by RobotCode, for a Playwright-like playback of each test on the dashboard's Live page (needs `robotframework-events` 0.6.0 or newer and `#robotcode.dashboard.enabled#`): which keywords get one. Only libraries named in `#robotcode.dashboard.screenshotLibraries#` (or `robot.toml`) get screenshots. They are not added to `log.html`, and each one takes time. If not set here, `mode` of `[tool.robotcode-dashboard.screenshots]` in `robot.toml` decides. Runs started elsewhere: `--listener \"robotframework_events.Listener;screenshots=actions;screenshot_libraries=Browser\"`.",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.screenshotLibraries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "The libraries that get step screenshots (`#robotcode.dashboard.stepScreenshots#`), for example `Browser`, `SeleniumLibrary`, `AppiumLibrary`, `QWeb`, `FlaUI`, `WhiteLibrary`, `SapGuiLibrary` (all presets: see the robotframework-events README). No library gets screenshots until it is named: desktop libraries capture the screen or a window, which can show other windows. Added to `libraries` of `[tool.robotcode-dashboard.screenshots]` in `robot.toml`, where the team can also exclude keywords and add own libraries.",
+            "scope": "resource"
+          },
+          "robotcode.dashboard.keepScreenshotRuns": {
+            "type": "number",
+            "default": 10,
+            "minimum": 0,
+            "markdownDescription": "How many of the newest history runs keep their step screenshots (`#robotcode.dashboard.stepScreenshots#`). Older runs keep their events and logs, without the step screenshots, so the archive stays small.",
+            "scope": "resource"
+          },
           "robotcode.dashboard.openOnRun": {
             "type": "boolean",
             "default": true,

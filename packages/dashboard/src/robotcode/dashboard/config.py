@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 from robotcode.plugin import Application
 from robotcode.robot.config.loader import load_robot_config_from_path
@@ -27,6 +27,37 @@ class DashboardConfig(BaseOptions):
             ```toml
             [tool.robotcode-dashboard]
             enabled = true
+            ```
+            """
+    )
+    screenshots: Optional[Dict[str, Any]] = field(
+        description="""\
+            Step screenshots for the playback of a test on the dashboard's Live page
+            (robotframework-events 0.6.0 or newer). Libraries are opt-in: none gets screenshots
+            until it is named in `libraries`. Keywords are opt-out: in a named library every
+            keyword gets one, except the read-only keywords its preset excludes and those in
+            `exclude`. `include` adds own keywords (from resource files). `custom` adds libraries
+            without a preset (see the robotframework-events README for the presets and the
+            capture types). `mode`: `off` (default), `actions`, `all` or `failure`.
+
+            The VS Code settings `robotcode.dashboard.stepScreenshots` (mode) and
+            `robotcode.dashboard.screenshotLibraries` (added to `libraries`) and the
+            `--execution-events-screenshots` / `--execution-events-screenshot-libraries`
+            options of `robotcode debug` take precedence.
+
+            Examples:
+
+            ```toml
+            [tool.robotcode-dashboard.screenshots]
+            mode = "actions"
+            libraries = ["Browser", "SeleniumLibrary"]
+            include = ["MyShop.Log In"]
+            exclude = ["Browser.Hover", "Scroll To *"]
+
+            [tool.robotcode-dashboard.screenshots.custom.MyDesktopLibrary]
+            match = ["mydesktop:MyDesktopLibrary"]
+            capture = { type = "screen", region = "window" }
+            exclude = ["Get *"]
             ```
             """
     )

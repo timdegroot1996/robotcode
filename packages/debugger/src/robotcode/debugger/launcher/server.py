@@ -153,6 +153,8 @@ class LauncherDebugAdapterProtocol(DebugAdapterProtocol):
         outputTimestamps: Optional[bool] = False,  # noqa: N803
         groupOutput: Optional[bool] = False,  # noqa: N803
         executionEvents: Optional[bool] = None,  # noqa: N803
+        executionEventsScreenshots: Optional[str] = None,  # noqa: N803
+        executionEventsScreenshotLibraries: Optional[List[str]] = None,  # noqa: N803
         stopOnEntry: Optional[bool] = False,  # noqa: N803
         dryRun: Optional[bool] = None,  # noqa: N803
         mode: Optional[str] = None,
@@ -214,6 +216,13 @@ class LauncherDebugAdapterProtocol(DebugAdapterProtocol):
         # only when the client decided; otherwise robot.toml decides
         if executionEvents is not None:
             robotcode_run_args += ["--execution-events" if executionEvents else "--no-execution-events"]
+        if executionEventsScreenshots is not None:
+            robotcode_run_args += ["--execution-events-screenshots", executionEventsScreenshots]
+        if executionEventsScreenshotLibraries:
+            robotcode_run_args += [
+                "--execution-events-screenshot-libraries",
+                ",".join(executionEventsScreenshotLibraries),
+            ]
 
         if stopOnEntry:
             robotcode_run_args += ["--stop-on-entry"]

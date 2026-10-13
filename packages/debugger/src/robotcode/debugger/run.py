@@ -52,6 +52,9 @@ def set_server(value: "DebugAdapterServer") -> None:
         _server = value
 
 
+SCREENSHOT_MODES = ("off", "actions", "all", "failure")
+
+
 def _execution_events_enabled(app: Application, execution_events: Optional[bool]) -> bool:
     """The option of `robotcode debug` if given, else `enabled` of `[tool.robotcode-dashboard]` in robot.toml.
 
@@ -60,14 +63,38 @@ def _execution_events_enabled(app: Application, execution_events: Optional[bool]
     """
     if execution_events is not None:
         return execution_events
+    return bool(getattr(_dashboard_config(app), "enabled", False))
 
+
+def _execution_events_screenshots(
+    app: Application, mode: Optional[str], libraries: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """The step screenshot settings for robotframework-events: `[tool.robotcode-dashboard.screenshots]` in
+    robot.toml, with the options of `robotcode debug` on top (the mode replaces, the libraries add). None when
+    they are off."""
+    table = getattr(_dashboard_config(app), "screenshots", None)
+    settings: Dict[str, Any] = dict(table) if isinstance(table, dict) else {}
+    if mode is not None:
+        settings["mode"] = mode
+    chosen = str(settings.get("mode") or "off").lower()
+    if chosen not in SCREENSHOT_MODES:
+        app.warning(f"Unknown screenshots mode {chosen!r}, expected one of {', '.join(SCREENSHOT_MODES)}")
+        return None
+    if chosen == "off":
+        return None
+    names = [*(settings.get("libraries") or []), *(n.strip() for n in (libraries or "").split(",") if n.strip())]
+    settings.update(version=1, mode=chosen, libraries=list(dict.fromkeys(names)))
+    return settings
+
+
+def _dashboard_config(app: Application) -> Any:
     from robotcode.plugin.manager import PluginManager
     from robotcode.robot.config.loader import load_robot_config_from_path
     from robotcode.robot.config.utils import get_config_files
 
     tools = {tool.tool_name: tool.config_class for tool in PluginManager.instance().tool_config_classes}
     if "robotcode-dashboard" not in tools:
-        return False
+        return None
     try:
         config_files, _, _ = get_config_files(
             None,
@@ -79,12 +106,11 @@ def _execution_events_enabled(app: Application, execution_events: Optional[bool]
         robot_config = load_robot_config_from_path(*config_files, extra_tools=tools, verbose_callback=app.verbose)
     except (TypeError, ValueError) as e:
         app.warning(f"Could not read [tool.robotcode-dashboard] from robot.toml: {e}")
-        return False
-    config = robot_config.tool.get("robotcode-dashboard") if robot_config.tool is not None else None
-    return bool(getattr(config, "enabled", False))
+        return None
+    return robot_config.tool.get("robotcode-dashboard") if robot_config.tool is not None else None
 
 
-def _execution_events_args(app: Application, enabled: bool) -> List[str]:
+def _execution_events_args(app: Application, enabled: bool, screenshots: Optional[Dict[str, Any]] = None) -> List[str]:
     """Registers robotframework-events when execution events are on and forwards its events as ``robotEvents``.
 
     When they are off nothing is imported and no listener is added.
@@ -115,7 +141,33 @@ def _execution_events_args(app: Application, enabled: bool) -> List[str]:
         Debugger.instance.send_event(robotframework_events, Event(event="robotEvents", body=batch))
 
     robotframework_events.add_callback(ExecutionEventsBatcher(send))
-    return ["--listener", "robotframework_events.Listener"]
+    if screenshots is None:
+        return ["--listener", "robotframework_events.Listener"]
+
+    import importlib.util
+
+    # older versions fail on an unknown listener argument
+    if importlib.util.find_spec("robotframework_events.screenshots.config") is None:
+        app.warning(
+            "Step screenshots need robotframework-events 0.6.0 or newer: python -m pip install -U robotframework-events"
+        )
+        return ["--listener", "robotframework_events.Listener"]
+    return ["--listener", f"robotframework_events.Listener;screenshots={_settings_file(screenshots)}"]
+
+
+def _settings_file(settings: Dict[str, Any]) -> str:
+    """The step screenshot settings as a JSON file for the listener, removed when the run ends."""
+    import atexit
+    import json
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", prefix="robotcode-screenshots-", suffix=".json", delete=False
+    ) as file:
+        json.dump(settings, file)
+    atexit.register(lambda: Path(file.name).unlink(missing_ok=True))
+    return file.name
 
 
 @_logger.call
@@ -235,6 +287,8 @@ def run_debugger(
     output_timestamps: bool = False,
     group_output: bool = False,
     execution_events: Optional[bool] = None,
+    execution_events_screenshots: Optional[str] = None,
+    execution_events_screenshot_libraries: Optional[str] = None,
 ) -> int:
     if debug and debugpy and not is_debugpy_installed():
         app.warning("Debugpy not installed")
@@ -289,7 +343,11 @@ def run_debugger(
             "robotcode.debugger.listeners.ListenerV3",
             "--listener",
             "robotcode.debugger.listeners.ListenerV2",
-            *_execution_events_args(app, _execution_events_enabled(app, execution_events)),
+            *_execution_events_args(
+                app,
+                _execution_events_enabled(app, execution_events),
+                _execution_events_screenshots(app, execution_events_screenshots, execution_events_screenshot_libraries),
+            ),
             *args,
         ]
 

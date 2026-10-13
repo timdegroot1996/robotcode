@@ -1,6 +1,10 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { explicitDashboardSetting } from "./dashboardSetup";
+import {
+  explicitDashboardSetting,
+  explicitScreenshotLibrariesSetting,
+  explicitStepScreenshotsSetting,
+} from "./dashboardSetup";
 import { PythonManager } from "./pythonmanger";
 import { CONFIG_SECTION } from "./config";
 import { LanguageClientsManager, SUPPORTED_LANGUAGES, toVsCodeRange } from "./languageclientsmanger";
@@ -183,6 +187,12 @@ class RobotCodeDebugConfigurationProvider implements vscode.DebugConfigurationPr
       // opt-in: only an explicit setting is passed on, otherwise robot.toml decides (off by default)
       debugConfiguration.executionEvents =
         (debugConfiguration?.executionEvents as boolean | undefined) ?? explicitDashboardSetting(folder);
+      debugConfiguration.executionEventsScreenshots =
+        (debugConfiguration?.executionEventsScreenshots as string | undefined) ??
+        explicitStepScreenshotsSetting(folder);
+      debugConfiguration.executionEventsScreenshotLibraries =
+        (debugConfiguration?.executionEventsScreenshotLibraries as string[] | undefined) ??
+        explicitScreenshotLibrariesSetting(folder);
 
       if (!debugConfiguration.attachPython || debugConfiguration.noDebug) {
         debugConfiguration.attachPython = false;
