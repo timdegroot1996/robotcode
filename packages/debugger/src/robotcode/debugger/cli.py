@@ -120,7 +120,8 @@ DEBUGPY_DEFAULT_PORT = 5678
     "--execution-events-screenshots",
     type=click.Choice(["off", "actions", "all", "failure"], case_sensitive=False),
     default=None,
-    help="Screenshots after Browser, SeleniumLibrary and AppiumLibrary keywords for the playback on the Live page. "
+    help="Step screenshots after keywords of the libraries named in --execution-events-screenshot-libraries, "
+    "for the playback on the Live page. "
     "Without this option `mode` of `[tool.robotcode-dashboard.screenshots]` in robot.toml decides; off by default.",
 )
 @click.option(
